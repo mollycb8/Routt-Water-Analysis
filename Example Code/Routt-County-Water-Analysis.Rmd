@@ -1,0 +1,133 @@
+---
+title: "Water Quality Analysis For Routt County, CO"
+author: "Molly Bell"
+date: '2022-07-11'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+library(tmap)
+library(leaflet)
+library(sf)
+library(htmltools)
+library(magrittr)
+library(dplyr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(plotly)
+library(ggplot2)
+library(ionr)
+library(sf)
+
+```
+
+## Map of Sample Sites within Routt County, CO
+### Use your mouse to interact with the sample locations below to see how water was collected and what it was tested for.
+```{r, echo=FALSE, message=FALSE}
+Steamboat <- read.csv("~/AWQP/Steamboat_points.csv")
+
+getColor <- function(Steamboat) {
+  sapply(Steamboat$lat, function(lat) {
+  if(lat == 40.28528) {
+    "green"
+  } else if(lat == 40.268871) {
+    "green"
+  } else {
+    "orange"
+  } })
+}
+ai_colors <-c("green","orange")
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  markerColor = getColor(Steamboat)
+)
+
+Steamboat %>%
+leaflet() %>%
+addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
+addProviderTiles(providers$Esri.WorldTopoMap, group = "World Topo Map") %>%
+addLayersControl(baseGroups = c("World Topo Map", "World Imagery")) %>%
+  addAwesomeMarkers(label = ~Steamboat$Site, icon = icons,
+            labelOptions = labelOptions(textOnly = TRUE, textsize =  12),
+             popup = ~htmlEscape(Steamboat$Popup)) %>%
+  addLegend( position = "topleft", title="Routt County Sample Locations", colors = ai_colors, labels = 
+  unique(Steamboat$Sample)) %>%
+setView(lat = 40.363076, lng = -106.860446, zoom = 10) %>%
+  addScaleBar(
+  position = "bottomright",
+
+scaleBarOptions(
+  maxWidth = 200,
+  metric = TRUE,
+  imperial = TRUE,
+  updateWhenIdle = TRUE)) 
+
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+
+directory = '~/GitHub/Routt-Country-Water-Analysis/Example Data/Graph'
+
+setwd(directory)
+
+# import xls files and merge into single df
+df <- list.files(path=directory) %>% 
+  lapply(read_xls) %>% 
+  bind_rows %>%
+  mutate(FinalResult = as.numeric(FinalResult))
+
+df$IndTestName = gsub(" ", "_", df$IndTestName)
+
+# Create Inflow/outflow/other source column based on Field ID
+df$source = ifelse(grepl('IN', df$FieldID), 'Inflow', 
+                   ifelse(grepl('UYM', df$FieldID), 'Outflow',
+                 ifelse(grepl('OT', df$FieldID),'Outflow',
+                        ifelse(grepl('LABQC', df$FieldID),'LABQC', 'Other'))))
+
+# Create location column based on FieldID
+df$location = ifelse(grepl('SCI',df$FieldID), 'Stagecoach_In',
+                     ifelse(grepl('SCA', df$FieldID),'Stagecoach_Above',
+                            ifelse(grepl('00', df$FieldID),'Stagecoach_Install',
+                                   ifelse(grepl('TR', df$FieldID),'Todds_Ranch',
+                                          ifelse(grepl('SB-L', df$FieldID),'Legacy_Ranch',
+                                                 ifelse(grepl('Y', df$FieldID), 'Upper_Yampa',
+                                                        ifelse(grepl('SCO', df$FieldID), 'Stagecoach_Out', NA)))))))
+# Create sample type column base on FieldID
+df$type = ifelse(grepl('GB',df$FieldID), 'Grab',
+                     ifelse(grepl('LC', df$FieldID),'Low_cost', 
+                            ifelse(grepl('ISC', df$FieldID), 'ISCO',
+                                   ifelse(grepl('DB', df$FieldID), 'Grab', NA))))
+
+SB <- df %>%
+  select(c(FieldID, IndTestName, FinalResult, location, type, source )) %>%
+  na.omit() 
+```
+
+## Water Quality Analysis Results for Total Phosphorus at Legacy Ranch and Upper Yampa Field Sites Comparing Inflow/Outflow Water Sources
+### Hover your mouse over chart components to see data in more detail. 
+
+```{r, echo = FALSE}
+SB2 <- SB %>%
+  subset(SB$IndTestName == 'TOTAL_PHOSPHORUS')  
+SB3 <- SB2 %>%
+  subset(SB2$location == c('Upper_Yampa','Legacy_Ranch'))
+ test <-  ggplot(SB3, aes(x = source, y = FinalResult, fill = source))+
+   scale_fill_manual(values=c("#1E4D2B",
+                             "#C8C372")) +
+  geom_bar(stat = 'summary', fun = 'mean')+
+  facet_wrap(~location)+
+  labs(x = '', y = 'Total Phosphorus (mg/L)',
+       title = 'Water Quality Analysis for Yampa River Valley')+
+  theme_classic() +
+ theme(plot.title = element_text(hjust = 0.5))
+ggplotly(test, tooltip = "y")
+```
+
+
